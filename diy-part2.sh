@@ -16,6 +16,29 @@ rm -rf package/passwall-packages package/passwall-luci
 git clone --depth=1 https://github.com/Openwrt-Passwall/openwrt-passwall-packages package/passwall-packages
 git clone --depth=1 https://github.com/Openwrt-Passwall/openwrt-passwall package/passwall-luci
 
+# ---------- 关键修复：代理核心版本必须匹配 P大 24.10 自带 Go 1.23.12 ----------
+# 最新版 sing-box 1.14.4 要 Go 1.25.5、xray 26.x 要 Go 1.27、geoview 要 Go 1.25，
+# 而 P大源码 GOTOOLCHAIN=local 锁死 Go 1.23.12，编译必然失败。
+# 处理：sing-box 降级到 1.12.0（go.mod = go 1.23.1，满足 1.23.12）；
+#       xray / geoview / smartdns 全部关闭（用户只用 sing-box）。
+
+# 1) sing-box 降级：直接用 1.12.0 时期配套的 Makefile（commit 6dd3dbf），
+#    不用"新版 Makefile 改版本号"的混搭（新旧 LDFLAGS/tags 有差异）
+SB_MK=package/passwall-packages/sing-box/Makefile
+SB_OLD_URL="https://raw.githubusercontent.com/Openwrt-Passwall/openwrt-passwall-packages/6dd3dbf25546/sing-box/Makefile"
+curl -fsSL --retry 3 "$SB_OLD_URL" -o "$SB_MK" || { echo "!!! 下载 sing-box 1.12.0 Makefile 失败，终止"; exit 1; }
+
+# 2) 从源头关闭不需要的高版本 Go 组件：把它们的 default y 改成 default n
+#    （即使 .config 漏写 not set，defconfig 也不会再自动开启）
+PW_MK=package/passwall-luci/luci-app-passwall/Makefile
+for opt in Geoview Xray SmartDNS; do
+  sed -i "/^config PACKAGE_\$(PKG_NAME)_INCLUDE_${opt}$/,/^$/ s/^\tdefault y if aarch64.*/\tdefault n/" "$PW_MK"
+done
+
+# 校验：版本已降级、默认值已改
+grep -q '^PKG_VERSION:=1.12.0$' "$SB_MK" || { echo "!!! sing-box 降级失败，终止"; exit 1; }
+echo ">>> sing-box 已降级到 1.12.0（go 1.23.1），xray/geoview/smartdns 已从 Makefile 关闭"
+
 # 诊断：打印当前目录和设备行，便于定位
 echo ">>> diy-part2 pwd = $(pwd)"
 grep -E 'CONFIG_TARGET_PROFILE|CONFIG_TARGET_mediatek_filogic_DEVICE_h3c' .config || echo "    (无设备行)"
