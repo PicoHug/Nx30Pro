@@ -28,6 +28,19 @@ SB_MK=package/passwall-packages/sing-box/Makefile
 SB_OLD_URL="https://raw.githubusercontent.com/Openwrt-Passwall/openwrt-passwall-packages/6dd3dbf25546/sing-box/Makefile"
 curl -fsSL --retry 3 "$SB_OLD_URL" -o "$SB_MK" || { echo "!!! 下载 sing-box 1.12.0 Makefile 失败，终止"; exit 1; }
 
+# 1b) 关键：sing-box 1.12.0 源码 common/tls/ech_tag_stub.go 在启用 with_ech 时
+#     会故意写一行非法代码触发编译错误，提示该 tag 已废弃（ECH 已并入标准库）。
+#     旧版 Makefile 里 SING_BOX_WITH_ECH 默认 y，必须改成 n，否则必然编译失败。
+sed -i '/^[[:space:]]*config SING_BOX_WITH_ECH$/,/^$/ s/^[[:space:]]*default y[[:space:]]*$/      default n/' "$SB_MK"
+grep -A3 '^[[:space:]]*config SING_BOX_WITH_ECH$' "$SB_MK" | grep -q 'default n' || { echo "!!! 关闭 SING_BOX_WITH_ECH 默认值失败，终止"; exit 1; }
+
+# .config 里也显式关掉（defconfig 会尊重 "is not set"，防止默认值回退）
+if grep -q '^CONFIG_SING_BOX_WITH_ECH=y$' .config; then
+  sed -i 's/^CONFIG_SING_BOX_WITH_ECH=y$/# CONFIG_SING_BOX_WITH_ECH is not set/' .config
+else
+  grep -q '^# CONFIG_SING_BOX_WITH_ECH is not set$' .config || echo '# CONFIG_SING_BOX_WITH_ECH is not set' >> .config
+fi
+
 # 2) 从源头关闭不需要的高版本 Go 组件：把它们的 default y 改成 default n
 #    （即使 .config 漏写 not set，defconfig 也不会再自动开启）
 PW_MK=package/passwall-luci/luci-app-passwall/Makefile
@@ -37,7 +50,8 @@ done
 
 # 校验：版本已降级、默认值已改
 grep -q '^PKG_VERSION:=1.12.0$' "$SB_MK" || { echo "!!! sing-box 降级失败，终止"; exit 1; }
-echo ">>> sing-box 已降级到 1.12.0（go 1.23.1），xray/geoview/smartdns 已从 Makefile 关闭"
+grep -q '^# CONFIG_SING_BOX_WITH_ECH is not set$' .config || { echo "!!! SING_BOX_WITH_ECH 未关闭（1.12.0 会编译失败），终止"; exit 1; }
+echo ">>> sing-box 已降级到 1.12.0（go 1.23.1），ECH tag 已关闭，xray/geoview/smartdns 已从 Makefile 关闭"
 
 # 诊断：打印当前目录和设备行，便于定位
 echo ">>> diy-part2 pwd = $(pwd)"
