@@ -96,12 +96,6 @@ jobs:
         make download -j8
         find dl -size -1024c -exec rm -f {} \;
 
-    - name: 预检 sing-box 核心（失败即早停）
-      run: |
-        cd openwrt
-        make package/passwall-packages/sing-box/compile -j$(nproc) V=s || { echo "!!! sing-box 预检失败，提前终止（不用等全量编译）"; exit 1; }
-        echo ">>> sing-box 预检通过，继续全量编译"
-
     - name: 编译固件
       id: compile
       run: |
