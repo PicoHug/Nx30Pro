@@ -16,19 +16,17 @@ rm -rf package/passwall-packages package/passwall-luci
 git clone --depth=1 https://github.com/Openwrt-Passwall/openwrt-passwall-packages package/passwall-packages
 git clone --depth=1 https://github.com/Openwrt-Passwall/openwrt-passwall package/passwall-luci
 
-# 诊断：打印当前目录和 .config 里的设备行，便于定位
+# 诊断：打印当前目录和设备行，便于定位
 echo ">>> diy-part2 pwd = $(pwd)"
-echo ">>> .config 里的 PROFILE 行："
-grep -E 'CONFIG_TARGET_PROFILE|CONFIG_TARGET_DEVICE_mediatek_filogic_DEVICE_h3c' .config || echo "    (无)"
+grep -E 'CONFIG_TARGET_PROFILE|CONFIG_TARGET_mediatek_filogic_DEVICE_h3c' .config || echo "    (无设备行)"
 
-# 兜底：若 PROFILE 行不在，直接补写（个别 checkout 场景下会丢），不终止编译
-if ! grep -q '^CONFIG_TARGET_PROFILE=' .config; then
-  echo 'CONFIG_TARGET_PROFILE="DEVICE_h3c_magic-nx30-pro"' >> .config
-  echo ">>> 已补写 CONFIG_TARGET_PROFILE"
-fi
+# 兜底：单设备模式三件套，缺哪行补哪行（避免 defconfig 回退到默认设备）
+grep -q '^CONFIG_TARGET_mediatek_filogic=y' .config || echo 'CONFIG_TARGET_mediatek_filogic=y' >> .config
+grep -q '^CONFIG_TARGET_mediatek_filogic_DEVICE_h3c_magic-nx30-pro=y' .config || echo 'CONFIG_TARGET_mediatek_filogic_DEVICE_h3c_magic-nx30-pro=y' >> .config
+grep -q '^CONFIG_TARGET_PROFILE="DEVICE_h3c_magic-nx30-pro"' .config || echo 'CONFIG_TARGET_PROFILE="DEVICE_h3c_magic-nx30-pro"' >> .config
 
-# 校验：DEVICE=y 必须存在；PROFILE 补写后必须指向正确设备
-if ! grep -q '^CONFIG_TARGET_DEVICE_mediatek_filogic_DEVICE_h3c_magic-nx30-pro=y' .config; then
+# 校验：正确的设备符号 + PROFILE 都必须在，nmbm 不能在
+if ! grep -q '^CONFIG_TARGET_mediatek_filogic_DEVICE_h3c_magic-nx30-pro=y' .config; then
   echo "!!! 错误：.config 未锁定 h3c_magic-nx30-pro，终止编译"
   exit 1
 fi
@@ -36,7 +34,7 @@ if ! grep -q '^CONFIG_TARGET_PROFILE="DEVICE_h3c_magic-nx30-pro"' .config; then
   echo "!!! 错误：PROFILE 未指向 h3c_magic-nx30-pro，终止编译"
   exit 1
 fi
-if grep -q '^CONFIG_TARGET_DEVICE_mediatek_filogic_DEVICE_h3c_magic-nx30-pro-nmbm=y' .config; then
+if grep -q '^CONFIG_TARGET_mediatek_filogic_DEVICE_h3c_magic-nx30-pro-nmbm=y' .config; then
   echo "!!! 错误：误选了 nmbm 版，终止编译"
   exit 1
 fi
