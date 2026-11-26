@@ -85,9 +85,9 @@ jobs:
         grep -E 'CONFIG_TARGET_PROFILE|CONFIG_TARGET_DEVICE_mediatek_filogic_DEVICE_h3c_magic-nx30-pro|CONFIG_PACKAGE_luci-app-passwall=y|CONFIG_PACKAGE_wpad-openssl=y|CONFIG_PACKAGE_kmod-mt_wifi=y' .config || true
         # 硬校验①：单设备模式必须同时有 DEVICE=y 和 PROFILE（缺一个就会被 defconfig 丢弃设备）
         grep -q '^CONFIG_TARGET_DEVICE_mediatek_filogic_DEVICE_h3c_magic-nx30-pro=y' .config || { echo "!!! defconfig 后设备符号丢失，终止"; exit 1; }
-        grep -q '^CONFIG_TARGET_PROFILE="DEVICE_h3c_magic-nx30-pro"$' .config || { echo "!!! defconfig 后 PROFILE 丢失，终止"; exit 1; }
+        grep -q '^CONFIG_TARGET_PROFILE="DEVICE_h3c_magic-nx30-pro"' .config || { echo "!!! defconfig 后 PROFILE 丢失，终止"; exit 1; }
         ! grep -q '^CONFIG_TARGET_DEVICE_mediatek_filogic_DEVICE_h3c_magic-nx30-pro-nmbm=y' .config || { echo "!!! 误选 nmbm，终止"; exit 1; }
-        ! grep -q '^CONFIG_TARGET_PROFILE="DEVICE_h3c_magic-nx30-pro-nmbm"$' .config || { echo "!!! 误选 nmbm PROFILE，终止"; exit 1; }
+        ! grep -q '^CONFIG_TARGET_PROFILE="DEVICE_h3c_magic-nx30-pro-nmbm"' .config || { echo "!!! 误选 nmbm PROFILE，终止"; exit 1; }
         # 硬校验②：PassWall / 闭源驱动 / wpad 必须在
         grep -q '^CONFIG_PACKAGE_luci-app-passwall=y' .config || { echo "!!! PassWall 丢失，终止"; exit 1; }
         grep -q '^CONFIG_PACKAGE_kmod-mt_wifi=y' .config || { echo "!!! 闭源 mt_wifi 丢失，终止"; exit 1; }
