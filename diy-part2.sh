@@ -16,9 +16,13 @@ rm -rf package/passwall-packages package/passwall-luci
 git clone --depth=1 https://github.com/Openwrt-Passwall/openwrt-passwall-packages package/passwall-packages
 git clone --depth=1 https://github.com/Openwrt-Passwall/openwrt-passwall package/passwall-luci
 
-# 兜底校验：必须精确锁定 OpenWrt U-Boot layout 版（非 nmbm）
+# 兜底校验：单设备模式必须 DEVICE=y 和 PROFILE 同时存在，缺一个 defconfig 后会丢设备
 if ! grep -q '^CONFIG_TARGET_DEVICE_mediatek_filogic_DEVICE_h3c_magic-nx30-pro=y' .config; then
   echo "!!! 错误：.config 未锁定 h3c_magic-nx30-pro，终止编译"
+  exit 1
+fi
+if ! grep -q '^CONFIG_TARGET_PROFILE="DEVICE_h3c_magic-nx30-pro"$' .config; then
+  echo "!!! 错误：.config 缺少 CONFIG_TARGET_PROFILE，defconfig 后会丢设备，终止编译"
   exit 1
 fi
 if grep -q '^CONFIG_TARGET_DEVICE_mediatek_filogic_DEVICE_h3c_magic-nx30-pro-nmbm=y' .config; then
@@ -26,4 +30,4 @@ if grep -q '^CONFIG_TARGET_DEVICE_mediatek_filogic_DEVICE_h3c_magic-nx30-pro-nmb
   exit 1
 fi
 
-echo ">>> diy-part2 完成：PassWall 核心已替换，NX30 Pro 设备校验通过"
+echo ">>> diy-part2 完成：PassWall 核心已替换，NX30 Pro 设备(PROFILE+DEVICE)校验通过"
