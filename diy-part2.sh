@@ -16,13 +16,24 @@ rm -rf package/passwall-packages package/passwall-luci
 git clone --depth=1 https://github.com/Openwrt-Passwall/openwrt-passwall-packages package/passwall-packages
 git clone --depth=1 https://github.com/Openwrt-Passwall/openwrt-passwall package/passwall-luci
 
-# 兜底校验：单设备模式必须 DEVICE=y 和 PROFILE 同时存在，缺一个 defconfig 后会丢设备
+# 诊断：打印当前目录和 .config 里的设备行，便于定位
+echo ">>> diy-part2 pwd = $(pwd)"
+echo ">>> .config 里的 PROFILE 行："
+grep -E 'CONFIG_TARGET_PROFILE|CONFIG_TARGET_DEVICE_mediatek_filogic_DEVICE_h3c' .config || echo "    (无)"
+
+# 兜底：若 PROFILE 行不在，直接补写（个别 checkout 场景下会丢），不终止编译
+if ! grep -q '^CONFIG_TARGET_PROFILE=' .config; then
+  echo 'CONFIG_TARGET_PROFILE="DEVICE_h3c_magic-nx30-pro"' >> .config
+  echo ">>> 已补写 CONFIG_TARGET_PROFILE"
+fi
+
+# 校验：DEVICE=y 必须存在；PROFILE 补写后必须指向正确设备
 if ! grep -q '^CONFIG_TARGET_DEVICE_mediatek_filogic_DEVICE_h3c_magic-nx30-pro=y' .config; then
   echo "!!! 错误：.config 未锁定 h3c_magic-nx30-pro，终止编译"
   exit 1
 fi
-if ! grep -q '^CONFIG_TARGET_PROFILE="DEVICE_h3c_magic-nx30-pro"$' .config; then
-  echo "!!! 错误：.config 缺少 CONFIG_TARGET_PROFILE，defconfig 后会丢设备，终止编译"
+if ! grep -q '^CONFIG_TARGET_PROFILE="DEVICE_h3c_magic-nx30-pro"' .config; then
+  echo "!!! 错误：PROFILE 未指向 h3c_magic-nx30-pro，终止编译"
   exit 1
 fi
 if grep -q '^CONFIG_TARGET_DEVICE_mediatek_filogic_DEVICE_h3c_magic-nx30-pro-nmbm=y' .config; then
