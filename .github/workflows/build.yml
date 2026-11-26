@@ -17,6 +17,9 @@ env:
   DIY_P2_SH: diy-part2.sh
   TZ: Asia/Shanghai
 
+permissions:
+  contents: write
+
 jobs:
   build:
     runs-on: ubuntu-22.04
@@ -110,11 +113,18 @@ jobs:
         mkdir -p firmware
         find openwrt/bin/targets/mediatek/filogic -type f \( -name '*.itb' -o -name '*.bin' \) -exec cp {} firmware/ \;
         ls -lh firmware/
-        echo "=== 必需文件校验 ==="
-        for kw in initramfs-recovery squashfs-sysupgrade preloader bl31-uboot; do
+        echo "=== 必需文件校验（刷机真正需要的 3 个）.itb ==="
+        for kw in initramfs-recovery squashfs-sysupgrade preloader; do
           if ! ls firmware/ | grep -q "$kw"; then echo "!!! 缺少 $kw"; exit 1; fi
         done
-        echo "OK: 四类文件齐全"
+        # bl31-uboot.fip 只用于「替换原厂 uboot」，原厂已是 OpenWrt U-Boot layout，
+        # 走 TFTP recovery 不需要它；缺它不算失败，仅提示。
+        if ls firmware/ | grep -q 'bl31-uboot'; then
+          echo "OK: 含 bl31-uboot.fip（可选，用于换 uboot）"
+        else
+          echo "提示: 本次未产出 bl31-uboot.fip（不影响 TFTP recovery 刷机）"
+        fi
+        echo "OK: 刷机必需文件齐全"
 
     - name: 上传固件
       if: ${{ always() && steps.compile.outcome == 'success' }}
