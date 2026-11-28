@@ -92,7 +92,9 @@ jobs:
           MB=$(awk "BEGIN{printf \"%.2f\", $SZ/1048576}")
           echo "镜像: $(basename $ITB)"
           echo "大小: $SZ 字节 = $MB MB"
-          [ "$SZ" -lt 48000000 ] || { echo "!!! 超过 48MB（fit 卷扩容后 overlay 会过小），终止"; exit 1; }
+          # fit 卷 + u-boot-env 之后剩余即为 rootfs_data：61.7MB 可用总量，留 6MB 底线
+          [ "$SZ" -lt 56000000 ] || { echo "!!! 超过 56MB，rootfs_data 会小于 5MB，终止"; exit 1; }
+          if [ "$SZ" -ge 48000000 ]; then echo "::warning::镜像 ${MB}MB 偏大，overlay 约 $(( (61700000 - SZ) / 1048576 ))MB"; fi
           MAN=$(ls $D/*.manifest 2>/dev/null | head -1)
           if [ -z "$MAN" ]; then echo "!!! 没有 manifest，无法校验包清单"; exit 1; fi
           echo "=== 关键包校验 ==="
@@ -105,6 +107,7 @@ jobs:
           sha256sum "$ITB" | tee "$GITHUB_WORKSPACE/sha256.txt"
 
       - name: 收集产物
+        if: ${{ always() }}
         run: |
           cd "$IB_DIR"
           mkdir -p "$GITHUB_WORKSPACE/out"
