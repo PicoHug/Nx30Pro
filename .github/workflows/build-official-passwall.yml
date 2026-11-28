@@ -32,30 +32,53 @@ jobs:
           ls -lh ib.tar.zst
           tar --zstd -xf ib.tar.zst
           rm -f ib.tar.zst
-          ls -d immortalwrt-imagebuilder-*
           IB="$(ls -d immortalwrt-imagebuilder-*)"
           echo "IB_DIR=$RUNNER_TEMP/ib/$IB" >> "$GITHUB_ENV"
+          echo "解包到: $IB"
 
-      - name: 追加内核模块仓库
+      - name: 探查仓库配置
         run: |
           cd "$IB_DIR"
-          echo "=== 原始 repositories.conf ==="
-          cat repositories.conf
-          if grep -qE '^src/' repositories.conf; then
-            echo "src/gz kmods $KMOD_URL" >> repositories.conf
-          else
-            echo "$KMOD_URL" >> repositories.conf
+          echo "=== 根目录 ==="
+          ls -la
+          echo "=== repositories 相关文件 ==="
+          find . -maxdepth 4 \( -iname '*repositor*' -o -name 'distfeeds*' -o -name '*.list' \) -print 2>/dev/null | head -20 || true
+          echo "=== Makefile / include 里的仓库定义 ==="
+          grep -rnE 'downloads\.immortalwrt|src/gz|repositor' Makefile include/ 2>/dev/null | head -20 || true
+
+      - name: 追加内核模块仓库（自适应）
+        run: |
+          cd "$IB_DIR"
+          TARGET=""
+          for f in repositories.conf etc/apk/repositories.d/distfeeds.list etc/apk/repositories etc/opkg/distfeeds.conf; do
+            if [ -f "$f" ]; then TARGET="$f"; break; fi
+          done
+          if [ -z "$TARGET" ]; then
+            echo "::warning::未找到仓库配置文件，跳过 kmods 追加（若构建报缺 kmod 再处理）"
+            exit 0
           fi
-          echo "=== 追加后 ==="
-          cat repositories.conf
+          echo "配置文件: $TARGET"
+          cat "$TARGET"
+          if grep -q "kmods" "$TARGET"; then
+            echo "已含 kmods，跳过"
+          elif grep -qE '^src/' "$TARGET"; then
+            echo "src/gz kmods $KMOD_URL" >> "$TARGET"
+            echo "已追加 src/gz 形式"
+          else
+            echo "$KMOD_URL" >> "$TARGET"
+            echo "已追加裸 URL 形式"
+          fi
+          echo "--- 追加后 ---"
+          cat "$TARGET"
 
       - name: 构建镜像
         run: |
+          set -o pipefail
           cd "$IB_DIR"
           make image \
             PROFILE=h3c_magic-nx30-pro \
             PACKAGES="-dnsmasq dnsmasq-full luci-app-passwall luci-i18n-passwall-zh-cn sing-box v2ray-geosite kmod-zram zram-swap" \
-            2>&1 | tail -80
+            2>&1 | tee "$GITHUB_WORKSPACE/build.log" | tail -120
           echo "=== 产物目录 ==="
           ls -lh bin/targets/mediatek/filogic/ || true
 
@@ -77,7 +100,7 @@ jobs:
             if grep -q "^$p " "$MAN"; then echo "OK   $p"; else echo "!!! 清单缺少 $p"; exit 1; fi
           done
           echo "=== 透明代理所需内核模块 ==="
-          grep -E '^kmod-(nft-tproxy|nft-socket|nf-tproxy|nft-core|zram) ' "$MAN" || echo "(未出现在清单，可能在依赖中)"
+          grep -E '^kmod-(nft-tproxy|nft-socket|nf-tproxy|nft-core|zram) ' "$MAN" || echo "(不在清单中，可能在依赖里)"
           echo "=== sha256 ==="
           sha256sum "$ITB" | tee "$GITHUB_WORKSPACE/sha256.txt"
 
@@ -91,8 +114,11 @@ jobs:
           ls -lh "$GITHUB_WORKSPACE/out/"
 
       - name: 上传 artifact
+        if: ${{ always() }}
         uses: actions/upload-artifact@v4
         with:
           name: NX30Pro-25.12.2-passwall
-          path: out/
-          if-no-files-found: error
+          path: |
+            out/
+            build.log
+          if-no-files-found: warn
