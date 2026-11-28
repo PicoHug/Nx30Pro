@@ -1,0 +1,98 @@
+name: Build NX30Pro official 25.12.2 + PassWall (ImageBuilder)
+
+# 用官方 ImmortalWrt 25.12.2 ImageBuilder 重新组包：
+# 与设备上正在运行的系统同源同 profile，只多加 PassWall / sing-box / geosite。
+# 不走全量编译，不碰 bootloader，产物只有一个 squashfs-sysupgrade.itb。
+
+on:
+  workflow_dispatch:
+
+env:
+  TZ: Asia/Shanghai
+  IB_URL: https://downloads.immortalwrt.org/releases/25.12.2/targets/mediatek/filogic/immortalwrt-imagebuilder-25.12.2-mediatek-filogic.Linux-x86_64.tar.zst
+  KMOD_URL: https://downloads.immortalwrt.org/releases/25.12.2/targets/mediatek/filogic/kmods/6.12.103-1-b5b7729ffbba3ecdd83f339de8fadfb8
+
+jobs:
+  build:
+    runs-on: ubuntu-22.04
+
+    steps:
+      - name: 环境准备
+        run: |
+          sudo apt-get -yqq update
+          sudo -E apt-get -yqq install -y zstd curl
+          sudo timedatectl set-timezone "$TZ"
+          df -hT /
+
+      - name: 下载并解包 ImageBuilder
+        run: |
+          mkdir -p "$RUNNER_TEMP/ib"
+          cd "$RUNNER_TEMP/ib"
+          curl -fL --retry 3 --retry-delay 5 -o ib.tar.zst "$IB_URL"
+          ls -lh ib.tar.zst
+          tar --zstd -xf ib.tar.zst
+          rm -f ib.tar.zst
+          ls -d immortalwrt-imagebuilder-*
+          IB="$(ls -d immortalwrt-imagebuilder-*)"
+          echo "IB_DIR=$RUNNER_TEMP/ib/$IB" >> "$GITHUB_ENV"
+
+      - name: 追加内核模块仓库
+        run: |
+          cd "$IB_DIR"
+          echo "=== 原始 repositories.conf ==="
+          cat repositories.conf
+          if grep -qE '^src/' repositories.conf; then
+            echo "src/gz kmods $KMOD_URL" >> repositories.conf
+          else
+            echo "$KMOD_URL" >> repositories.conf
+          fi
+          echo "=== 追加后 ==="
+          cat repositories.conf
+
+      - name: 构建镜像
+        run: |
+          cd "$IB_DIR"
+          make image \
+            PROFILE=h3c_magic-nx30-pro \
+            PACKAGES="-dnsmasq dnsmasq-full luci-app-passwall luci-i18n-passwall-zh-cn sing-box v2ray-geosite kmod-zram zram-swap" \
+            2>&1 | tail -80
+          echo "=== 产物目录 ==="
+          ls -lh bin/targets/mediatek/filogic/ || true
+
+      - name: 校验体积与包清单
+        run: |
+          cd "$IB_DIR"
+          D=bin/targets/mediatek/filogic
+          ITB=$(ls $D/*squashfs-sysupgrade.itb 2>/dev/null | head -1)
+          if [ -z "$ITB" ]; then echo "!!! 没有产出 sysupgrade.itb，构建失败"; exit 1; fi
+          SZ=$(stat -c%s "$ITB")
+          MB=$(awk "BEGIN{printf \"%.2f\", $SZ/1048576}")
+          echo "镜像: $(basename $ITB)"
+          echo "大小: $SZ 字节 = $MB MB"
+          [ "$SZ" -lt 48000000 ] || { echo "!!! 超过 48MB（fit 卷扩容后 overlay 会过小），终止"; exit 1; }
+          MAN=$(ls $D/*.manifest 2>/dev/null | head -1)
+          if [ -z "$MAN" ]; then echo "!!! 没有 manifest，无法校验包清单"; exit 1; fi
+          echo "=== 关键包校验 ==="
+          for p in luci-app-passwall sing-box v2ray-geosite dnsmasq-full; do
+            if grep -q "^$p " "$MAN"; then echo "OK   $p"; else echo "!!! 清单缺少 $p"; exit 1; fi
+          done
+          echo "=== 透明代理所需内核模块 ==="
+          grep -E '^kmod-(nft-tproxy|nft-socket|nf-tproxy|nft-core|zram) ' "$MAN" || echo "(未出现在清单，可能在依赖中)"
+          echo "=== sha256 ==="
+          sha256sum "$ITB" | tee "$GITHUB_WORKSPACE/sha256.txt"
+
+      - name: 收集产物
+        run: |
+          cd "$IB_DIR"
+          mkdir -p "$GITHUB_WORKSPACE/out"
+          cp bin/targets/mediatek/filogic/*squashfs-sysupgrade.itb "$GITHUB_WORKSPACE/out/"
+          cp bin/targets/mediatek/filogic/*.manifest "$GITHUB_WORKSPACE/out/" || true
+          cp "$GITHUB_WORKSPACE/sha256.txt" "$GITHUB_WORKSPACE/out/" || true
+          ls -lh "$GITHUB_WORKSPACE/out/"
+
+      - name: 上传 artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: NX30Pro-25.12.2-passwall
+          path: out/
+          if-no-files-found: error
