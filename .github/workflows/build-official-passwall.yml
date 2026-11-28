@@ -77,7 +77,7 @@ jobs:
           cd "$IB_DIR"
           make image \
             PROFILE=h3c_magic-nx30-pro \
-            PACKAGES="-dnsmasq dnsmasq-full luci-app-passwall luci-i18n-passwall-zh-cn sing-box v2ray-geosite kmod-zram zram-swap" \
+            PACKAGES="-dnsmasq dnsmasq-full luci-app-passwall luci-i18n-passwall-zh-cn v2ray-geosite kmod-zram zram-swap" \
             2>&1 | tee "$GITHUB_WORKSPACE/build.log" | tail -120
           echo "=== 产物目录 ==="
           ls -lh bin/targets/mediatek/filogic/ || true
@@ -93,12 +93,12 @@ jobs:
           echo "镜像: $(basename $ITB)"
           echo "大小: $SZ 字节 = $MB MB"
           # fit 卷 + u-boot-env 之后剩余即为 rootfs_data：61.7MB 可用总量，留 6MB 底线
-          [ "$SZ" -lt 56000000 ] || { echo "!!! 超过 56MB，rootfs_data 会小于 5MB，终止"; exit 1; }
-          if [ "$SZ" -ge 48000000 ]; then echo "::warning::镜像 ${MB}MB 偏大，overlay 约 $(( (61700000 - SZ) / 1048576 ))MB"; fi
+          [ "$SZ" -lt 33554432 ] || { echo "!!! 超过 32MB，会压到 U-Boot 的内核加载区 0x48000000，终止"; exit 1; }
+          echo "overlay 预计 $(( (61700000 - SZ) / 1048576 ))MB（61.7MB - fit - u-boot-env）"
           MAN=$(ls $D/*.manifest 2>/dev/null | head -1)
           if [ -z "$MAN" ]; then echo "!!! 没有 manifest，无法校验包清单"; exit 1; fi
           echo "=== 关键包校验 ==="
-          for p in luci-app-passwall sing-box v2ray-geosite dnsmasq-full; do
+          for p in luci-app-passwall v2ray-geosite dnsmasq-full; do
             if grep -q "^$p " "$MAN"; then echo "OK   $p"; else echo "!!! 清单缺少 $p"; exit 1; fi
           done
           echo "=== 透明代理所需内核模块 ==="
